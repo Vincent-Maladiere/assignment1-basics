@@ -9,6 +9,10 @@ import numpy.typing as npt
 import torch
 from torch import Tensor
 
+from cs336_basics.train_bpe import BPETrainer
+from cs336_basics.bpe_tokenizer import BPETokenizer
+from cs336_basics import components as comp
+
 
 def run_linear(
     d_in: int,
@@ -28,8 +32,9 @@ def run_linear(
     Returns:
         Float[Tensor, "... d_out"]: The transformed output of your linear module.
     """
-
-    raise NotImplementedError
+    linear = comp.Linear(d_in, d_out)
+    linear.load_state_dict({"W": weights.T})
+    return linear(in_features)
 
 
 def run_embedding(
@@ -50,8 +55,9 @@ def run_embedding(
     Returns:
         Float[Tensor, "... d_model"]: Batch of embeddings returned by your Embedding layer.
     """
-
-    raise NotImplementedError
+    emb = comp.Embedding(vocab_size, d_model)
+    emb.load_state_dict({"W": weights})
+    return emb(token_ids)
 
 
 def run_swiglu(
@@ -452,7 +458,9 @@ def run_cross_entropy(
     raise NotImplementedError
 
 
-def run_gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: float) -> None:
+def run_gradient_clipping(
+    parameters: Iterable[torch.nn.Parameter], max_l2_norm: float
+) -> None:
     """Given a set of parameters, clip their combined gradients to have l2 norm at most max_l2_norm.
 
     Args:
@@ -559,7 +567,7 @@ def get_tokenizer(
     Returns:
         A BPE tokenizer that uses the provided vocab, merges, and special tokens.
     """
-    raise NotImplementedError
+    return BPETokenizer(vocab=vocab, merges=merges, special_tokens=special_tokens)
 
 
 def run_train_bpe(
@@ -589,4 +597,5 @@ def run_train_bpe(
                 representing that <token1> was merged with <token2>.
                 Merges are ordered by order of creation.
     """
-    raise NotImplementedError
+    bpe_trainer = BPETrainer(input_path, vocab_size, special_tokens, n_jobs=1).train()
+    return bpe_trainer.vocab_, bpe_trainer.merges_
