@@ -1,7 +1,7 @@
 import numpy as np
 from pathlib import Path
 
-from tests.test_tokenizer import (
+from ..tests.test_tokenizer import (
     get_tokenizer_from_vocab_merges_path,
     VOCAB_PATH,
     MERGES_PATH,
