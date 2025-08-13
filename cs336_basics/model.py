@@ -128,9 +128,12 @@ class RotaryPositionalEmbedding(nn.Module):
 
     def forward(self, x, token_positions):
         x = einops.rearrange(x, "... s (k n) -> ... s k n", n=2)
-        x = einops.einsum(
-            x, self.R[token_positions], "... s k n, ... s k m n -> ... s k m"
-        )
+        # FIXME: self.R[token_positions] messed with batch dimensions during training.
+        if self.training:
+            R = self.R
+        else:
+            R = self.R[token_positions]
+        x = einops.einsum(x, R, "... s k n, ... s k m n -> ... s k m")
         return einops.rearrange(x, "... s k n -> ... s (k n)", n=2)
 
     def _init_rot_matrix(self):

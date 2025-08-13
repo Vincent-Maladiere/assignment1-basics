@@ -127,29 +127,32 @@ class AdamW(torch.optim.Optimizer):
 
     def step(self, closure=None):
         loss = None if closure is None else closure()
-        if self.max_l2_norm is not None:
-            gradient_clipping(
-                parameters=list(itertools.chain(*self.param_groups)),
-                max_l2_norm=self.max_l2_norm,
-            )
+        # TODEBUG: some weights set to torch.nan when using gradient clipping.
+        # if self.max_l2_norm is not None:
+        #     gradient_clipping(
+        #         parameters=list(itertools.chain(*self.param_groups)),
+        #         max_l2_norm=self.max_l2_norm,
+        #     )
         for group in self.param_groups:
             lr = group["lr"]  # Get the learning rate.
             weight_decay = group["weight_decay"]  # Get the learning rate.
             beta_1, beta_2 = group["betas"]
             eps = group["eps"]
 
-            for p in group["params"]:
+            for idx, p in enumerate(group["params"]):
                 if p.grad is None:
                     continue
                 state = self.state[p]  # Get state associated with p.
                 # Get iteration number from the state, or initial value.
                 t = state.get("t", 1)
-                m_t_prev = state.get("m_t_prev", 0)
-                s_t_prev = state.get("s_t_prev", 0)
+                m_t_prev = state.get("m_t_prev", torch.zeros_like(p.data))
+                s_t_prev = state.get("s_t_prev", torch.zeros_like(p.data))
+                s_t_prev = s_t_prev.clip(min=0)
                 # Get the gradient of loss with respect to p.
-                grad = p.grad.data
+                grad = p.grad
                 m_t = beta_1 * m_t_prev + (1 - beta_1) * grad
                 s_t = beta_2 * s_t_prev + (1 - beta_2) * (grad**2)
+
                 lr_t = lr * math.sqrt(1 - beta_2**t) / (1 - beta_1**t)
                 # Update weight tensor in-place.
                 p.data -= lr_t * (m_t / torch.sqrt(s_t + eps))

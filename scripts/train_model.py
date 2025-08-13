@@ -1,6 +1,8 @@
+import json
 import typer
 import torch
 import numpy as np
+from datetime import datetime
 from pathlib import Path
 from cs336_basics.model import TransformerLM
 from cs336_basics.training import (
@@ -10,6 +12,22 @@ from cs336_basics.training import (
     get_batch,
     learning_rate_schedule,
 )
+
+
+def _prepare_dirs(path_dir_output):
+    str_date = f"{datetime.now()}".replace(" ", "_")
+    path_dir_output = Path(path_dir_output) / str_date
+
+    path_dir_checkpoints = path_dir_output / "checkpoints"
+    path_dir_checkpoints.mkdir(parents=True, exist_ok=True)
+
+    path_dir_stats = path_dir_output
+    path_dir_stats.mkdir(parents=True, exist_ok=True)
+
+    return {
+        "checkpoints": path_dir_checkpoints,
+        "stats": path_dir_stats,
+    }
 
 
 def _load_dataset_mmap(path_dir, index):
@@ -22,9 +40,9 @@ def _load_dataset_mmap(path_dir, index):
     return np.load(path, mmap_mode="r")
 
 
-def _apply_lr_schedule(optimizer, index, n_iter, lr_min, lr_max):
+def _apply_lr_schedule(optimizer, t, n_iter, lr_min, lr_max):
     lr = learning_rate_schedule(
-        index,
+        t,
         lr_max=lr_max,
         lr_min=lr_min,
         T_w=int(n_iter * 0.10),
@@ -42,13 +60,18 @@ def _to_tensor(dataset, indices, device):
     return torch.as_tensor(x, device=device)
 
 
+def _save_run_logs(run_logs, path):
+    path.write_text(json.dumps(run_logs))
+    print(f"Wrote {path}")
+
+
 def main(
     path_dir_dataset: str = "data/tiny_stories/ids",
-    path_dir_checkpoints: str = "data/tiny_stories/model_checkpoints",
-    n_iter: int = 100,
-    batch_size: int = 16,
-    vocab_size: int = 50256,
+    path_dir_output: str = "data/tiny_stories/out",
+    n_iter: int = 5000,
+    batch_size: int = 32,
     context_length: int = 256,
+    vocab_size: int = 10_000,
     d_model: int = 512,
     d_ff: int = 1344,
     n_layers: int = 4,
@@ -62,8 +85,16 @@ def main(
     max_l2_norm: float | None = None,
     device: str = "mps",
 ):
-    path_dir_checkpoints = Path(path_dir_checkpoints)
-    path_dir_checkpoints.mkdir(parents=True, exist_ok=True)
+    run_logs = {"params": locals()}
+    ### DEBUG
+    import random
+
+    random.seed(0)
+    np.random.seed(0)
+    torch.manual_seed(0)
+    ###
+
+    paths = _prepare_dirs(path_dir_output)
 
     model = TransformerLM(
         vocab_size=vocab_size,
@@ -74,7 +105,7 @@ def main(
         num_heads=n_heads,
         rope_theta=rope_theta,
         device=device,
-    )
+    ).train()
     optimizer = AdamW(
         model.parameters(),
         lr=lr,
@@ -83,6 +114,7 @@ def main(
         eps=1e-8,
         max_l2_norm=max_l2_norm,
     )
+    step_results = []
     for i in range(1, n_iter + 1):
 
         dataset = _load_dataset_mmap(path_dir_dataset, i)
@@ -102,11 +134,14 @@ def main(
         loss.backward()
         optimizer.step()
         print(i, loss)
+        step_results.append({"loss": float(loss.item())})
 
         if i > 0 and i % 5 == 0:
-            save_checkpoint(model, optimizer, i, path_dir_checkpoints / f"{i}.pt")
+            save_checkpoint(model, optimizer, i, paths["checkpoints"] / f"{i}.pt")
 
-    save_checkpoint(model, optimizer, i, path_dir_checkpoints / "final.pt")
+    run_logs["step_results"] = step_results
+    _save_run_logs(run_logs, paths["stats"] / "stats.json")
+    save_checkpoint(model, optimizer, i, paths["checkpoints"] / "final.pt")
 
 
 if __name__ == "__main__":
