@@ -12,6 +12,8 @@ from cs336_basics.training import (
     get_batch,
     learning_rate_schedule,
 )
+from torch.optim import AdamW
+from torch.optim.lr_scheduler import CosineAnnealingLR
 
 
 def _prepare_dirs(path_dir_output):
@@ -71,19 +73,19 @@ def main(
     n_iter: int = 5000,
     batch_size: int = 32,
     context_length: int = 256,
-    vocab_size: int = 10_000,
+    vocab_size: int = 2**16,
     d_model: int = 512,
     d_ff: int = 1344,
     n_layers: int = 4,
     n_heads: int = 16,
     rope_theta: int = 10000,
-    lr: float = 1e-4,
+    lr: float = 1e-3,
     lr_min: float = 1e-4,
     lr_max: float = 1e-1,
     betas: tuple[float, float] = (0.9, 0.999),
     weight_decay: float = 0.01,
     max_l2_norm: float | None = None,
-    device: str = "mps",
+    device: str = "cpu",
 ):
     run_logs = {"params": locals()}
     ### DEBUG
@@ -112,8 +114,9 @@ def main(
         weight_decay=weight_decay,
         betas=betas,
         eps=1e-8,
-        max_l2_norm=max_l2_norm,
+        # max_l2_norm=max_l2_norm,
     )
+    scheduler = CosineAnnealingLR(optimizer, T_max=n_iter, eta_min=1e-5)
     step_results = []
     for i in range(1, n_iter + 1):
 
@@ -133,6 +136,7 @@ def main(
         loss = cross_entropy(logits, y)
         loss.backward()
         optimizer.step()
+        scheduler.step()
         print(i, loss)
         step_results.append({"loss": float(loss.item())})
 

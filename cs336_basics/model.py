@@ -4,6 +4,7 @@ import torch
 from torch import nn
 import einops
 from collections import OrderedDict
+from torchtune.modules import RotaryPositionalEmbeddings as RotaryPositionalEmbeddings_
 
 
 def _linear_sigma_sq(d_in, d_out):
@@ -200,7 +201,7 @@ class MHA(nn.Module):
 
         # Run Rope on each heads independently.
         if self.rope is not None:
-            Q, K = self.rope(Q, token_positions), self.rope(K, token_positions)
+            Q, K = self.rope(Q), self.rope(K)
 
         # Run attention in a embarassingly parallel loop.
         attn_out = scaled_dot_product_attention(Q=Q, K=K, V=V, mask=causal)
@@ -219,8 +220,8 @@ class TransformerBlock(nn.Module):
         self.max_seq_len = max_seq_len
         self.theta = theta
         self.device = device
-        self.rope = RotaryPositionalEmbedding(
-            theta, d_model // num_heads, max_seq_len, device=device
+        self.rope = RotaryPositionalEmbeddings_(
+            base=theta, dim=d_model // num_heads, max_seq_len=max_seq_len
         )
         self.ln1 = RMSNorm(d_model, device=device)
         self.attn = MHA(d_model, num_heads, rope=self.rope, device=device)

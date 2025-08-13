@@ -6,13 +6,18 @@ from tqdm import tqdm
 
 from cs336_basics.model import softmax, TransformerLM
 from cs336_basics.training import AdamW, load_checkpoint
-from cs336_basics.bpe_tokenizer import BPETokenizer
+
+from tests.test_tokenizer import (
+    get_tokenizer_from_vocab_merges_path,
+    VOCAB_PATH,
+    MERGES_PATH,
+)
 
 
 def _load_model(path):
     # TODO: load from stats
     params_model = dict(
-        vocab_size=10_000,
+        vocab_size=65536,
         context_length=256,
         d_model=512,
         d_ff=1344,
@@ -33,15 +38,6 @@ def _load_model(path):
     optimizer = AdamW(**params_opt)
     _ = load_checkpoint(path, model, optimizer)
     return model.eval()
-
-
-def _load_tokenizer(path, special_tokens):
-    path = Path(path)
-    return BPETokenizer.from_files(
-        vocab_filepath=path / "vocab.pkl",
-        merges_filepath=path / "merges.pkl",
-        special_tokens=special_tokens,
-    )
 
 
 def _decode(model, ids_prefix, eot_id, temperature=0.5, top_p=0.8):
@@ -81,14 +77,15 @@ def _decode(model, ids_prefix, eot_id, temperature=0.5, top_p=0.8):
 
 def query(
     prompt: str,
-    path_model: str = "data/tiny_stories/out/2025-08-13_15:39:28.943017/checkpoints/475.pt",
-    path_tokenizer: str = "data/tiny_stories",
+    path_model: str = "data/tiny_stories/out/2025-08-13_16:55:05.613507/checkpoints/35.pt",
     temperature: float = 0.5,
     top_p: float = 0.8,
     eot_token="<|endoftext|>",
 ):
+    tokenizer = get_tokenizer_from_vocab_merges_path(
+        VOCAB_PATH, MERGES_PATH, special_tokens=[eot_token]
+    )
     model = _load_model(path_model)
-    tokenizer = _load_tokenizer(path_tokenizer, special_tokens=[eot_token])
     eot_id = tokenizer.inv_vocab[eot_token.encode("utf-8")]
     ids_in = tokenizer.encode(prompt)
     ids_out = _decode(
