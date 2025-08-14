@@ -1,4 +1,5 @@
 import json
+import random
 import typer
 import torch
 import numpy as np
@@ -9,6 +10,7 @@ from cs336_basics.training import (
     cross_entropy,
     AdamW,
     save_checkpoint,
+    load_checkpoint,
     get_batch,
     learning_rate_schedule,
 )
@@ -30,6 +32,20 @@ def _prepare_dirs(path_dir_output):
         "checkpoints": path_dir_checkpoints,
         "stats": path_dir_stats,
     }
+
+
+def _init_states(params_model, params_optimizer, params_cosine, path_checkpoint):
+    model = TransformerLM(**params_model).train()
+    optimizer = AdamW(model.parameters(), **params_optimizer)
+    start_iter, last_epoch = 0, -1
+
+    if path_checkpoint is not None:
+        path_checkpoint = Path(path_checkpoint)
+        load_checkpoint(path_checkpoint, model, optimizer)
+        start_iter = last_epoch = int(path_checkpoint.stem)
+
+    scheduler = CosineAnnealingLR(optimizer, last_epoch=last_epoch, **params_cosine)
+    return model, optimizer, scheduler, start_iter
 
 
 def _load_dataset_mmap(path_dir, index):
@@ -70,6 +86,7 @@ def _save_run_logs(run_logs, path):
 def main(
     path_dir_dataset: str = "data/tiny_stories/ids",
     path_dir_output: str = "data/tiny_stories/out",
+    path_train_from_checkpoint: str | None = None,
     n_iter: int = 5000,
     batch_size: int = 32,
     context_length: int = 256,
@@ -86,19 +103,17 @@ def main(
     weight_decay: float = 0.01,
     max_l2_norm: float | None = None,
     device: str = "cpu",
+    seed: int | None = 0,
 ):
     run_logs = {"params": locals()}
-    ### DEBUG
-    import random
 
-    random.seed(0)
-    np.random.seed(0)
-    torch.manual_seed(0)
-    ###
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
 
     paths = _prepare_dirs(path_dir_output)
 
-    model = TransformerLM(
+    params_model = dict(
         vocab_size=vocab_size,
         context_length=context_length,
         d_model=d_model,
@@ -107,18 +122,26 @@ def main(
         num_heads=n_heads,
         rope_theta=rope_theta,
         device=device,
-    ).train()
-    optimizer = AdamW(
-        model.parameters(),
+    )
+    params_optimizer = dict(
         lr=lr,
         weight_decay=weight_decay,
         betas=betas,
         eps=1e-8,
         # max_l2_norm=max_l2_norm,
     )
-    scheduler = CosineAnnealingLR(optimizer, T_max=n_iter, eta_min=1e-5)
+    params_cosine = dict(
+        T_max=n_iter,
+        eta_min=1e-5,
+    )
+    model, optimizer, scheduler, start_iter = _init_states(
+        params_model,
+        params_optimizer,
+        params_cosine,
+        path_train_from_checkpoint,
+    )
     step_results = []
-    for i in range(1, n_iter + 1):
+    for i in range(start_iter, n_iter + 1):
 
         dataset = _load_dataset_mmap(path_dir_dataset, i)
         # _apply_lr_schedule(optimizer, i, n_iter, lr_min, lr_max)
@@ -140,7 +163,7 @@ def main(
         print(i, loss)
         step_results.append({"loss": float(loss.item())})
 
-        if i > 0 and i % 5 == 0:
+        if i > 0 and i % 10 == 0:
             save_checkpoint(model, optimizer, i, paths["checkpoints"] / f"{i}.pt")
 
     run_logs["step_results"] = step_results
